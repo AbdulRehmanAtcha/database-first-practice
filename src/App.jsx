@@ -1,6 +1,17 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { collection, addDoc, getDocs, onSnapshot, query } from "firebase/firestore";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  orderBy,
+  deleteDoc, 
+  updateDoc
+} from "firebase/firestore";
 import './App.css';
 import logo from './icons/facebook.png';
 import home from './icons/home.png';
@@ -15,6 +26,8 @@ import arrow from './icons/arrow.png';
 import user from './icons/profile-user.png'
 import { useState, useEffect } from 'react';
 import moment from 'moment';
+import { useFormik } from 'formik';
+import * as yup from 'yup';
 
 
 
@@ -36,23 +49,62 @@ const db = getFirestore(app);
 
 function App() {
   const [post, setPost] = useState("");
+  const [title, setTitle] = useState("");
   const [posts, setPosts] = useState([]);
+  const [editing, setEditing] = useState({
+    editingId: null,
+    editingText: ""
+  })
 
-  const showPost = async (event) => {
-    document.getElementById("input").value = "";
-    event.preventDefault();
-    console.log("Post Text", post);
-    try {
-      const docRef = await addDoc(collection(db, "Your Posts"), {
-        yourPost: post,
-        date: new Date().getTime()
-      });
-      console.log("Document written with ID: ", docRef.id);
-    } catch (e) {
-      console.error("Error adding document: ", e);
-    }
+  const formik = useFormik({
+    initialValues: {
+      title: '',
+      post: '',
+    },
+    validationSchema: yup.object({
+      title: yup
+        .string('Enter Your Post Title')
+        .max(100, 'Limit Exceed!')
+        .required('Title is required'),
+      post: yup
+        .string('Enter your post')
+        .max(310, 'Limit Exceed!')
+        .required('Post is required'),
+    }),
+    onSubmit: async (values) => {
+      try {
+        
+        const docRef = await addDoc(collection(db, "Your Posts"), {
+          yourPost: values.post,
+          date: serverTimestamp(),
+          yourTitle: values.title
+        });
+        console.log("Document written with ID: ", docRef.id);
+      } catch (e) {
+        console.error("Error adding document: ", e);
+      }
+    },
+  });
 
-  }
+  // const showPost = async (event) => {
+  //   document.getElementById("input").value = "";
+  //   document.getElementById("title").value = "";
+  //   event.preventDefault();
+  //   console.log("Post Text", post);
+  //   try {
+  //     const docRef = await addDoc(collection(db, "Your Posts"), {
+  //       yourPost: post,
+  //       date: new date().getTime(),
+  //       yourTitle: title
+  //     });
+  //     console.log("Document written with ID: ", docRef.id);
+  //   } catch (e) {
+  //     console.error("Error adding document: ", e);
+  //   }
+
+  // }
+
+
 
   useEffect(() => {
     const getPosts = async () => {
@@ -66,20 +118,43 @@ function App() {
       });
     }
     // getPosts();
-    const RealTimeData = async ()=>{
-      const q = query(collection(db, "Your Posts"));
+    const RealTimeData = async () => {
+      
+      const q = query(collection(db, "Your Posts"), orderBy("date", "desc"));
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const posts = [];
         querySnapshot.forEach((doc) => {
-          posts.push(doc.data());
+          // posts.push(doc.data());
+          posts.push({ id: doc.id, ...doc.data() });
         });
 
         setPosts(posts);
-        console.log("My posts: ", posts.join(", "));
+        console.log("My posts: ", posts);
       });
     }
     RealTimeData();
   }, [])
+
+
+  const deletePost = async(postID)=>{
+    await deleteDoc(doc(db, "Your Posts", postID));
+    console.log(postID)
+  }
+
+
+  const updatePost = async (e) => {
+    e.preventDefault();
+
+    await updateDoc(doc(db, "Your Posts", editing.editingId), {
+      yourPost: editing.editingText
+    });
+
+    setEditing({
+      editingId: null,
+      editingText: ""
+    })
+
+  }
 
   return (
     <body>
@@ -106,14 +181,15 @@ function App() {
       <br />
       <br />
       <div className="main">
-        <div className="main-left"></div>
         <div className="main-mid">
           <div className="box">
-            <img src={user} alt="User" height="50" width="50" />
-            <form onSubmit={showPost}>
-              <textarea id="input" type="text" onChange={(e) => {
-                setPost(e.target.value)
-              }} placeholder="What's on your mind, user?" />
+            <form onSubmit={formik.handleSubmit}>
+              <input name="title" type="text" placeholder="Enter Title Of Your Post..." id="title" value={formik.values.title} onChange={formik.handleChange} />
+
+              <span>{formik.touched.title}  {formik.errors.title}</span>
+              <textarea name="post" cols="50" rows="6" id="input" value={formik.values.post} onChange={formik.handleChange}></textarea>
+              <br />
+              <span>{formik.touched.post}  {formik.errors.post}</span>
               <button type='submit'>Post</button>
             </form>
           </div>
@@ -126,17 +202,59 @@ function App() {
                   <img src={user} alt="User" height="50" width="50" />
                   <div className="post-head-content">
                     <h2>User</h2>
-                    <p>{moment(eachPost.date).format('Do MMMM , h:mm: a')}</p>
+                    <p>{
+                    moment(
+                      (
+                      eachPost?.date?.seconds) ? eachPost?.date?.seconds * 1000
+                      :
+                      undefined)
+                    .format('Do MMMM , h:mm a')}</p>
+                  </div>
+                  <div className="buttons">
+                    <button onClick={()=>{
+                      deletePost(eachPost?.id)
+                    }}>Delete</button>
+                    {(editing.editingId === eachPost?.id) ? null :
+              <button onClick={() => {
+
+                setEditing({
+                  editingId: eachPost?.id,
+                  editingText: eachPost?.text
+                })
+
+              }} >Edit</button>
+            }
+
                   </div>
                 </div>
                 <br />
                 <hr />
-                <p id="userPost">{eachPost?.yourPost}</p>
+                <h2 id="post-title">{eachPost?.yourTitle}</h2>
+                <br />
+                <p id="userPost">{(eachPost.id === editing.editingId) ?
+                <form onSubmit={updatePost}>
+
+                  <input
+                  id="change-value"
+                    type="text"
+                    value={editing.editingText}
+                    onChange={(e) => {
+                      setEditing({
+                        ...editing,
+                        editingText: e.target.value
+                      })
+                    }}
+                     />
+
+                  <button type="submit" id="Update">Update</button>
+                </form>
+                :
+                eachPost?.yourPost}</p>
+                
               </div>
             ))}
           </div>
         </div>
-        <div className="main-right"></div>
       </div>
     </body>
   );
